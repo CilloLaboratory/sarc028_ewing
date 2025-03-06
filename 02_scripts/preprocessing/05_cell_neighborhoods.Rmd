@@ -1,0 +1,273 @@
+---
+title: "Map cellular neighborhoods across samples"
+author: "Anthony R Cillo"
+date: "July 17 2024"
+output: html_document
+---
+
+## Introduction
+
+Generate cellular neighborhoods across single cells.
+
+## Load packages
+
+```{r}
+
+.libPaths("/ihome/acillo/arc85/Rlibs_Mar_2023")
+
+suppressMessages({
+    library(Seurat)
+    library(tidyverse)
+    library(patchwork)
+    library(cluster)
+    library(xlsx)
+})
+
+```
+
+## Load integrated dataset
+
+```{r}
+
+ser_comb <- readRDS("../03_output/sarc028_cosmx_scrnaseq_final_cell_annot_ser_240717.rds")
+
+glimpse(ser_comb@meta.data)
+
+table(ser_comb@meta.data$best_resp)
+
+```
+
+## Read in NanoString data
+
+```{r}
+
+ser_cos <- readRDS("../03_output/sarc028_cosmx_seurat_obj_240617.rds")
+
+ser_sub <- ser_comb[,ser_comb@meta.data$data_type=="nanostring"]
+
+length(intersect(colnames(ser_sub),colnames(ser_cos)))
+
+ser_cos_sub <- ser_cos[,intersect(colnames(ser_sub),colnames(ser_cos))]
+
+meta1 <- ser_cos_sub@meta.data %>%
+    as_tibble(.,rownames="cb")
+
+meta2 <- ser_sub@meta.data %>%
+    as_tibble(.,rownames="cb") %>%
+    select(cb,final_cell_annot)
+
+meta1 <- left_join(meta1,meta2,by="cb")
+
+ser_cos_sub@meta.data$final_cell_annot <- meta1$final_cell_annot
+
+table(ser_cos_sub@meta.data$final_cell_annot)
+
+## Filter out infrequent cell populations
+cell_types_keep <- ser_cos_sub@meta.data %>%
+    group_by(final_cell_annot) %>%
+    summarize(cell_counts=n()) %>%
+    ungroup() %>%
+    filter(cell_counts>9) %>%
+    pull(final_cell_annot)
+
+ser_cos_sub <- ser_cos_sub[,ser_cos_sub@meta.data$final_cell_annot %in% cell_types_keep]
+
+table(ser_cos_sub@meta.data$final_cell_annot)
+
+```
+
+## Cell locations 
+
+```{r}
+
+dat <- readr::read_csv("../01_input_data/R5620_Sarc028/R5620_Sarc028_metadata_file.csv")
+
+p1 <- dat %>%
+    filter(fov=="1") %>%
+    ggplot(.,aes(x=CenterY_local_px,y=CenterX_local_px)) +
+    geom_point()
+
+fov1_image <- ser_cos_sub[,ser_cos_sub@meta.data$fov=="1"]
+
+p2 <- ImageDimPlot(fov1_image,group.by="final_cell_annot")
+
+p1 + p2
+
+```
+
+## Function to find vector of neighbors
+
+```{r}
+
+cell_neighbor <- function(seurat_image,cell_types) {
+
+    dat <- FetchData(seurat_image,vars="centroids")
+    dat$cell_types <- cell_types
+
+    dist_dat <- as.matrix(dist(dat[,1:2],method="euclidian"))
+
+    neighbor_list <- vector("list",length=nrow(dat))
+
+    for (i in 1:nrow(dat)) { 
+
+        dat_sub <- dat
+        dat_sub$cell_dist <- dist_dat[,i]
+
+        dat_sub$include <- dat_sub$cell_dist<300
+
+        neighbor_list[[i]] <- dat_sub[-i,] %>%
+            filter(include==TRUE) %>%
+            select(cell_types) %>%
+            table() %>%
+            prop.table() %>%
+            as.vector()
+
+    }
+
+    neighbor_frame <- do.call(rbind,neighbor_list)
+    colnames(neighbor_frame) <- levels(dat$cell_types)
+
+    return(neighbor_frame)
+    
+}
+
+```
+
+## Cell neighborhoods across all images
+
+```{r}
+
+## Make sure cell types are a factor
+ser_cos_sub@meta.data$final_cell_annot <- as.factor(ser_cos_sub@meta.data$final_cell_annot)
+
+## Split into individual FOVs
+ser_cos_split <- SplitObject(ser_cos_sub,split="fov_selected")
+
+## Loop over FOVs to ID cell neighorhoods
+hoods <- lapply(ser_cos_split,function(x) {
+    cell_neighbor(x$X1,cell_types=x@meta.data$final_cell_annot)
+})
+
+## Combined into dataframe
+for (i in 1:length(hoods)) {
+    hoods[[i]] <- data.frame(hoods[[i]],fov=names(ser_cos_split)[[i]])
+}
+
+hoods_frame <- do.call(rbind,hoods)
+
+```
+
+## Clustering across all images
+
+```{r}
+
+rows_exclude <- apply(hoods_frame,1,function(x) any(is.na(x)))
+
+## Keep track of cells that get excluded
+hoods_frame$cb <- colnames(ser_cos_sub)
+
+hoods_frame <- hoods_frame[!rows_exclude,]
+
+# Save hoods frame here
+
+## Evaluate clustering solutions
+#hoods_res <- vector("list",length=7)
+#hoods_dist <- dist(hoods_frame[,1:19])
+
+#for (i in 1:length(hoods_res)) {
+#    clust_res <- data.frame(hoods_frame,cluster=kmeans(hoods_frame[,1:19],centers=3#+i)$cluster)
+#    hoods_res[[i]] <- silhouette(clust_res$cluster,dist=hoods_dist)
+#    print(paste("Finished ",i," of 7",sep=""))
+#}
+
+#plot(seq(1,7,1),sapply(hoods_res,function(x) {
+#    summary(x)$avg.width
+#}))
+# ideal result - 6 clusters
+
+hoods_clust <- data.frame(hoods_frame,cluster=kmeans(hoods_frame[,1:16],centers=10)$cluster)
+
+mean_cell_freq <- hoods_clust %>%
+    gather(cell_type,freq,-cluster,-fov,-cb) %>%
+    group_by(cluster,cell_type) %>%
+    summarize(mean_freq=mean(freq)) %>%
+    ungroup() %>%
+    spread(cell_type,mean_freq)
+
+mean_cell_freq <- mean_cell_freq[,2:ncol(mean_cell_freq)]
+
+pheatmap::pheatmap(mean_cell_freq,scale="column",color=colorRampPalette(colors = c("purple","black","yellow"))(1000))
+
+```
+
+## Barplots for individual samples
+
+```{r}
+
+colnames(hoods_clust)
+
+hoods_clust_comb <- left_join(hoods_clust,meta1,by="cb")
+
+colnames(hoods_clust_comb)
+
+table(hoods_clust_comb$pid)
+
+hoods_clust_comb %>%
+    mutate(cluster=as.factor(cluster)) %>%
+    select(deident_id,cluster,timepoint) %>%
+    group_by(deident_id,timepoint) %>%
+    mutate(total_cells=n()) %>%
+    group_by(deident_id,cluster,timepoint) %>%
+    mutate(cluster_counts=n()) %>%
+    ungroup() %>%
+    mutate(cluster_freq=cluster_counts/total_cells) %>%
+    distinct() %>%
+    ggplot(.,aes(x=deident_id,y=cluster_freq,fill=cluster)) +
+    geom_col() +
+    facet_wrap(~timepoint)
+
+heat_dat <- hoods_clust_comb %>%
+    select(deident_id,cluster,timepoint) %>%
+    mutate(cluster=as.factor(cluster)) %>%
+    group_by(deident_id,timepoint) %>%
+    mutate(total_cells=n()) %>%
+    group_by(deident_id,cluster,timepoint) %>%
+    mutate(cluster_counts=n()) %>%
+    ungroup() %>%
+    mutate(cluster_freq=cluster_counts/total_cells) %>%
+    distinct() %>%
+    select(deident_id,timepoint,cluster,cluster_freq) %>%
+    spread(cluster,cluster_freq)
+
+heat_dat[is.na(heat_dat)] <- 0
+
+for_heatmap <- heat_dat[,3:12] %>%
+    data.frame()
+rownames(for_heatmap) <- paste(heat_dat$deident_id,heat_dat$timepoint,sep="__")
+
+row_annot_raw <- hoods_clust_comb %>%
+    select(best_resp,timepoint,deident_id) %>%
+    distinct() %>%
+    data.frame()
+
+row_annot <- data.frame(best_resp=row_annot_raw$best_resp,
+                        timepoint=row_annot_raw$timepoint)
+rownames(row_annot) <- paste(row_annot_raw$deident_id,row_annot_raw$timepoint,sep="__")
+
+pheatmap::pheatmap(for_heatmap,scale="row",annotation_row=row_annot,color=colorRampPalette(colors = c("purple","black","yellow"))(1000))
+
+```
+
+## Save data 
+
+```{r}
+
+saveRDS(hoods,file="../03_output/sarc028_nanostring_hoods_240717.rds")
+
+saveRDS(hoods_frame,file="../03_output/sarc028_nanostring_hoods_frame_240717.rds")
+
+# saveRDS(hoods_res,file="../03_output/sarc028_neighborhoods_sil_res_240716.rds")
+
+saveRDS(hoods_clust_comb,file="../03_output/sarc028_hoods_clusters_metadata_240717.rds")
+
+```

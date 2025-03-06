@@ -1,0 +1,282 @@
+---
+title: "Integrate NK and T cells from scRNAseq to CosMx"
+author: "Anthony R Cillo"
+date: "July 17 2024"
+output: html_document
+---
+
+## Introduction
+
+Here, we will subcluster NK / T cells and B / pDCs to perform refined cell type label transfer.
+
+## Load packages
+
+```{r}
+
+.libPaths("/ihome/acillo/arc85/Rlibs_Mar_2023")
+
+suppressMessages({
+    library(Seurat)
+    library(tidyverse)
+    library(patchwork)
+})
+
+```
+
+## Load datasets
+
+```{r}
+
+ser_comb <- readRDS("../03_output/sarc028_cosmx_scrnaseq_integrated_240717.rds")
+
+DimPlot(ser_comb,group.by="initial_cell_annot",label=T)
+
+ser_comb <- ser_comb[,grepl("T_and_NK_cells",ser_comb@meta.data$initial_cell_annot)]
+
+table(ser_comb@meta.data$initial_cell_annot)
+
+DimPlot(ser_comb,group.by="initial_cell_annot")
+
+```
+
+## Create data for joint integration
+
+```{r}
+
+DefaultAssay(ser_comb) <- "RNA"
+
+ser_split <- SplitObject(ser_comb,split.by="data_type")
+
+```
+
+## Combine and integrate data 
+
+```{r}
+
+ser_list <- ser_split
+
+# normalize and identify variable features for each dataset independently
+ser_list <- lapply(X = ser_list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 500)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = ser_list)
+
+anchors <- FindIntegrationAnchors(object.list = ser_list, anchor.features = features)
+
+# this command creates an 'integrated' data assay
+ser_comb <- IntegrateData(anchorset = anchors)
+
+# specify that we will perform downstream analysis on the corrected data note that the
+# original unmodified data still resides in the 'RNA' assay
+DefaultAssay(ser_comb) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+ser_comb <- ScaleData(ser_comb, verbose = FALSE)
+ser_comb <- RunPCA(ser_comb, npcs = 30, verbose = FALSE)
+
+ElbowPlot(ser_comb)
+
+ser_comb <- RunUMAP(ser_comb, reduction = "pca", dims = 1:12)
+ser_comb <- FindNeighbors(ser_comb, reduction = "pca", dims = 1:12)
+ser_comb <- FindClusters(ser_comb, resolution = c(0.3,0.5,0.7,1))
+
+```
+
+## Check results 
+
+```{r}
+
+DimPlot(ser_comb,group.by="data_type")
+
+p1 <- FeaturePlot(ser_comb,c("FOXP3","CD8A","FCGR3A","CD4"))
+
+p2 <- DimPlot(ser_comb,group.by="integrated_snn_res.0.5",label=T)
+
+p3 <- DimPlot(ser_comb,group.by="integrated_snn_res.1",label=T)
+
+p1 + p2
+
+p3
+
+Idents(ser_comb) <- "integrated_snn_res.1"
+
+cluster7 <- FindMarkers(ser_comb,ident.1="7")
+cluster8 <- FindMarkers(ser_comb,ident.1="8")
+
+cluster7 %>%
+    filter(avg_log2FC>0) %>%
+    filter(p_val_adj<0.05)
+
+cluster8 %>%
+    filter(avg_log2FC>0) %>%
+    filter(p_val_adj<0.05)
+
+meta <- ser_comb@meta.data %>%
+    mutate(refined_lymph_cell_annot=recode(integrated_snn_res.1,
+                                   `0` = "CD8pos_T_cell",
+                                   `1` = "CD4pos_Tconv",
+                                   `2` = "CD4pos_Tconv",
+                                   `3` = "CD4pos_Tconv",
+                                   `4` = "CD4pos_Tconv",
+                                   `5` = "CD8pos_T_cell",
+                                   `6` = "CD8pos_T_cell",
+                                   `7` = "NK_cell",
+                                   `8` = "CD8pos_T_cell",
+                                   `9` = "CD8pos_T_cell",
+                                   `10` = "CD4pos_Tconv",
+                                   `11` = "CD4pos_Tconv",
+                                   `12` = "CD4pos_Treg",
+                                   `13` = "CD8pos_T_cell"
+                                                                     )
+           )
+
+meta$refined_lymph_cell_annot <- as.character(meta$refined_lymph_cell_annot)
+
+table(meta$refined_lymph_cell_annot,useNA="always")
+
+ser_comb@meta.data$refined_nk_t_cell_annot <- meta$refined_lymph_cell_annot
+
+DimPlot(ser_comb,group.by="refined_nk_t_cell_annot")
+
+refined_nk_t_results <- ser_comb
+
+```
+
+## Refine plasmablast and pDC cells
+
+```{r}
+
+ser_comb <- readRDS("../03_output/sarc028_cosmx_scrnaseq_integrated_240717.rds")
+
+ser_comb <- ser_comb[,grepl("Plasmablasts/pDCs",ser_comb@meta.data$initial_cell_annot)]
+
+table(ser_comb@meta.data$initial_cell_annot)
+
+DimPlot(ser_comb,group.by="initial_cell_annot")
+
+DimPlot(ser_comb,group.by="data_type")
+
+FeaturePlot(ser_comb,c("MZB1","IL3RA","JCHAIN"))
+
+```
+
+## Combine and integrate data 
+
+```{r}
+
+DefaultAssay(ser_comb) <- "RNA"
+
+ser_comb <- ser_comb %>%
+    NormalizeData(.) %>%
+    FindVariableFeatures(.) %>%
+    ScaleData(.) %>%
+    RunPCA(.)
+
+ElbowPlot(ser_comb)
+
+ser_comb <- ScaleData(ser_comb, verbose = FALSE)
+ser_comb <- RunPCA(ser_comb, npcs = 30, verbose = FALSE)
+
+ElbowPlot(ser_comb)
+
+ser_comb <- RunUMAP(ser_comb, reduction = "pca", dims = 1:15)
+ser_comb <- FindNeighbors(ser_comb, reduction = "pca", dims = 1:15)
+ser_comb <- FindClusters(ser_comb, resolution = c(0.3,0.5,0.7,1))
+
+```
+
+## Refine Plasmablasts and pDCs
+
+```{r}
+
+DimPlot(ser_comb,group.by="RNA_snn_res.0.3",label=T)
+
+Idents(ser_comb) <- "RNA_snn_res.0.3"
+
+degs <- FindAllMarkers(ser_comb)
+
+degs %>%
+    filter(p_val_adj<0.05) %>%
+    filter(avg_log2FC>0) %>%
+    split(.$cluster) %>%
+    lapply(.,function(x) x %>% arrange(desc(avg_log2FC)) %>% head(n=10))
+
+FeaturePlot(ser_comb,c("MS4A1","IL3RA"))
+
+b_pdc_meta <- ser_comb@meta.data %>%
+    mutate(refined_b_pdc_annot=ifelse(RNA_snn_res.0.3 %in% c(4,1,7,3),"Plasmablasts","pDCs")) %>%
+    mutate(refined_b_pdc_annot=ifelse(RNA_snn_res.0.3 %in% c(0,5),NA,refined_b_pdc_annot))
+
+table(b_pdc_meta$refined_b_pdc_annot,useNA="always")
+
+```
+
+
+## Recombine T cell subsets original data
+
+```{r}
+
+## Reload original data
+ser_comb <- readRDS("../03_output/sarc028_cosmx_scrnaseq_integrated_240717.rds")
+
+meta_orig <- ser_comb@meta.data %>%
+    as_tibble(.,rownames="cb")
+
+meta_new1 <- refined_nk_t_results@meta.data %>%
+    as_tibble(.,rownames="cb") %>%
+    select(cb,refined_nk_t_cell_annot)
+
+meta_new2 <- b_pdc_meta %>%
+    as_tibble(.,rownames="cb") %>%
+    select(cb,refined_b_pdc_annot)
+
+meta_all <- left_join(meta_orig,meta_new1,by="cb") %>%
+    left_join(.,meta_new2,by="cb") %>%
+    mutate(final_cell_annot=ifelse(is.na(refined_nk_t_cell_annot),
+                                           as.character(initial_cell_annot),
+                                           refined_nk_t_cell_annot)
+           ) %>%
+    mutate(final_cell_annot=ifelse(is.na(refined_b_pdc_annot),
+                                           as.character(final_cell_annot),
+                                           refined_b_pdc_annot)
+           )
+
+
+table(meta_all$final_cell_annot)
+
+ser_comb@meta.data$final_cell_annot <- meta_all$final_cell_annot
+
+ser_comb <- ser_comb[,!ser_comb@meta.data$final_cell_annot=="Plasmablasts/pDCs"]
+
+DimPlot(ser_comb,group.by="final_cell_annot")
+
+```
+
+## Save results 
+
+```{r}
+
+saveRDS(ser_comb,file="../03_output/sarc028_cosmx_scrnaseq_final_cell_annot_ser_240717.rds")
+
+```
+
+## Plotting 
+
+```{r}
+
+ser_split <- SplitObject(ser_comb,split.by="data_type")
+
+p1 <- DimPlot(ser_split[[1]],group.by="final_cell_annot") +
+    ggtitle("scRNAseq") +
+    theme(legend.position="none")
+p2 <- DimPlot(ser_split[[2]],group.by="final_cell_annot") +
+    ggtitle("Nanostring CosMx") +
+    theme(legend.position="none")
+
+p1 / p2 
+
+```
+
