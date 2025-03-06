@@ -1,7 +1,7 @@
 ---
 title: "Integrate CosMX and scRNAseq"
 author: "Anthony R Cillo"
-date: "July 16 2024"
+date: "March 6 2025"
 output: html_document
 ---
 
@@ -13,7 +13,7 @@ Here, we will use the previously defined cell types from scRNAseq analysis to an
 
 ```{r}
 
-.libPaths("/ihome/acillo/arc85/Rlibs_Mar_2023")
+.libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
 
 suppressMessages({
     library(Seurat)
@@ -27,13 +27,12 @@ suppressMessages({
 
 ```{r}
 
-ser_scrnaseq <- readRDS("../03_output/Ewing_combined_seurat_file_240716.rds")
-
-ser_cos <- readRDS("../03_output/sarc028_cosmx_seurat_obj_240617.rds")
+ser_scrnaseq <- readRDS("../../03_output/Ewing_scRNAseq_reference.rds")
+ser_cos <- readRDS("../../03_output/SARC028_CosMx_object.rds")
 
 ```
 
-## Joint integration workflow
+## Combine scRNAseq and CosMx
 
 ```{r}
 
@@ -67,7 +66,7 @@ nano_ser@meta.data$data_type <- "nanostring"
 
 ```
 
-## Combine and integrate data 
+## Integrate scRNAseq and CosMx data 
 
 ```{r}
 
@@ -107,26 +106,15 @@ ser_comb <- FindClusters(ser_comb, resolution = c(0.3,0.5,0.7,1))
 
 ```{r}
 
-ser_comb@meta.data <- ser_comb@meta.data %>%
-    mutate(data_type=ifelse(is.na(nFeature_Nanostring),"scrnaseq","nanostring"))
-
 DimPlot(ser_comb,group.by="data_type")
 
 p1 <- DimPlot(ser_comb,group.by="scrnaseq_crude_cell_types",label=T,repel=T)
-
 p2 <- DimPlot(ser_comb,group.by="integrated_snn_res.0.5",label=T)
 
-table(ser_comb@meta.data$integrated_snn_res.0.5,ser_comb@meta.data$scrnaseq_crude_cell_types)
+p1 
+p2 
 
 Idents(ser_comb) <- "integrated_snn_res.0.5"
-
-cluster16 <- FindMarkers(ser_comb,ident.1="16")
-
-cluster16 %>%
-    filter(avg_log2FC>0) %>%
-    filter(p_val_adj<0.05)
-
-FeaturePlot(ser_comb,"nFeature_Nanostring")
 
 ser_comb@meta.data %>%
     select(integrated_snn_res.0.5,nFeature_Nanostring) %>%
@@ -134,27 +122,23 @@ ser_comb@meta.data %>%
     group_by(integrated_snn_res.0.5) %>%
     summarize(mean_features=mean(nFeature_Nanostring))
 
-## Remove clsuter 16 - essentially no features per cell
-
+## Remove cluster 16 - essentially no features per cell
 ser_comb <- ser_comb[,!ser_comb@meta.data$integrated_snn_res.0.5=="16"]
 
 ser_comb@meta.data$integrated_snn_res.0.5 <- droplevels(ser_comb@meta.data$integrated_snn_res.0.5)
 
 table(ser_comb@meta.data$integrated_snn_res.0.5)
 
+```
+
+## Transfer cell type annotations
+
+```{r}
+
 ser_comb@meta.data %>%
     select(integrated_snn_res.0.5,scrnaseq_crude_cell_types) %>%
     table() %>%
     pheatmap::pheatmap(.,scale="column")
-
-FeaturePlot(ser_comb,"EPCAM")
-
-cluster17 <- FindMarkers(ser_comb,ident.1="17")
-
-cluster17 %>%
-    filter(avg_log2FC>0) %>%
-    filter(p_val_adj<0.05) %>%
-    arrange(desc(avg_log2FC))
 
 meta <- ser_comb@meta.data %>%
     mutate(initial_cell_annot=recode(integrated_snn_res.0.5,
@@ -189,6 +173,6 @@ DimPlot(ser_comb,group.by="initial_cell_annot")
 
 ```{r}
 
-saveRDS(ser_comb,file="../03_output/sarc028_cosmx_scrnaseq_integrated_240717.rds")
+saveRDS(ser_comb,file="../../03_output/SARC028_CosMx_and_scRNAseq_object.rds")
 
 ```

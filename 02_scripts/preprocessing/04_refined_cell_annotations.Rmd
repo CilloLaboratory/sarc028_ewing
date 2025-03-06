@@ -1,19 +1,19 @@
 ---
-title: "Integrate NK and T cells from scRNAseq to CosMx"
+title: "Refine cell type annotations for CosMx"
 author: "Anthony R Cillo"
-date: "July 17 2024"
+date: "March 6, 2025"
 output: html_document
 ---
 
 ## Introduction
 
-Here, we will subcluster NK / T cells and B / pDCs to perform refined cell type label transfer.
+Here, we will perform subclustering to identify finer subsets of immune populations within the CosMx data.
 
 ## Load packages
 
 ```{r}
 
-.libPaths("/ihome/acillo/arc85/Rlibs_Mar_2023")
+.libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
 
 suppressMessages({
     library(Seurat)
@@ -27,9 +27,15 @@ suppressMessages({
 
 ```{r}
 
-ser_comb <- readRDS("../03_output/sarc028_cosmx_scrnaseq_integrated_240717.rds")
+ser_comb <- readRDS("../../03_output/SARC028_CosMx_and_scRNAseq_object.rds")
 
 DimPlot(ser_comb,group.by="initial_cell_annot",label=T)
+
+```
+
+## Isolate data for NK and T cell subset identification
+
+```{r}
 
 ser_comb <- ser_comb[,grepl("T_and_NK_cells",ser_comb@meta.data$initial_cell_annot)]
 
@@ -39,19 +45,13 @@ DimPlot(ser_comb,group.by="initial_cell_annot")
 
 ```
 
-## Create data for joint integration
+## Combine and integrate CosMx and scRNAseq for NK and T cells 
 
 ```{r}
 
 DefaultAssay(ser_comb) <- "RNA"
 
 ser_split <- SplitObject(ser_comb,split.by="data_type")
-
-```
-
-## Combine and integrate data 
-
-```{r}
 
 ser_list <- ser_split
 
@@ -85,7 +85,7 @@ ser_comb <- FindClusters(ser_comb, resolution = c(0.3,0.5,0.7,1))
 
 ```
 
-## Check results 
+## Check results for NK and T cells 
 
 ```{r}
 
@@ -113,6 +113,12 @@ cluster7 %>%
 cluster8 %>%
     filter(avg_log2FC>0) %>%
     filter(p_val_adj<0.05)
+
+```
+
+## Add refined metadata for NK and T cells 
+
+```{r}
 
 meta <- ser_comb@meta.data %>%
     mutate(refined_lymph_cell_annot=recode(integrated_snn_res.1,
@@ -145,11 +151,21 @@ refined_nk_t_results <- ser_comb
 
 ```
 
-## Refine plasmablast and pDC cells
+## Re-load datasets
 
 ```{r}
 
-ser_comb <- readRDS("../03_output/sarc028_cosmx_scrnaseq_integrated_240717.rds")
+ser_comb <- readRDS("../../03_output/SARC028_CosMx_and_scRNAseq_object.rds")
+
+DimPlot(ser_comb,group.by="initial_cell_annot",label=T)
+
+```
+
+## Re-cluster Plasmablasts and pDCs
+
+We note here that we do not need to re-integrate plasmablasts and pDCs to separate them by cell types.
+
+```{r}
 
 ser_comb <- ser_comb[,grepl("Plasmablasts/pDCs",ser_comb@meta.data$initial_cell_annot)]
 
@@ -161,24 +177,13 @@ DimPlot(ser_comb,group.by="data_type")
 
 FeaturePlot(ser_comb,c("MZB1","IL3RA","JCHAIN"))
 
-```
-
-## Combine and integrate data 
-
-```{r}
-
 DefaultAssay(ser_comb) <- "RNA"
 
 ser_comb <- ser_comb %>%
     NormalizeData(.) %>%
     FindVariableFeatures(.) %>%
     ScaleData(.) %>%
-    RunPCA(.)
-
-ElbowPlot(ser_comb)
-
-ser_comb <- ScaleData(ser_comb, verbose = FALSE)
-ser_comb <- RunPCA(ser_comb, npcs = 30, verbose = FALSE)
+    RunPCA(., npcs = 30, verbose = FALSE)
 
 ElbowPlot(ser_comb)
 
@@ -189,6 +194,8 @@ ser_comb <- FindClusters(ser_comb, resolution = c(0.3,0.5,0.7,1))
 ```
 
 ## Refine Plasmablasts and pDCs
+
+We note that clusters 0 and 5 do not robuslty express markers of either plasmablasts or pDCs and are therefore annotated as NA.
 
 ```{r}
 
@@ -215,12 +222,12 @@ table(b_pdc_meta$refined_b_pdc_annot,useNA="always")
 ```
 
 
-## Recombine T cell subsets original data
+## Add refined annotations to original dataset
 
 ```{r}
 
 ## Reload original data
-ser_comb <- readRDS("../03_output/sarc028_cosmx_scrnaseq_integrated_240717.rds")
+ser_comb <- readRDS("../../03_output/SARC028_CosMx_and_scRNAseq_object.rds")
 
 meta_orig <- ser_comb@meta.data %>%
     as_tibble(.,rownames="cb")
@@ -244,8 +251,7 @@ meta_all <- left_join(meta_orig,meta_new1,by="cb") %>%
                                            refined_b_pdc_annot)
            )
 
-
-table(meta_all$final_cell_annot)
+table(meta_all$final_cell_annot,useNA="always")
 
 ser_comb@meta.data$final_cell_annot <- meta_all$final_cell_annot
 
@@ -259,24 +265,6 @@ DimPlot(ser_comb,group.by="final_cell_annot")
 
 ```{r}
 
-saveRDS(ser_comb,file="../03_output/sarc028_cosmx_scrnaseq_final_cell_annot_ser_240717.rds")
+saveRDS(ser_comb,file="../../03_output/SARC028_CosMx_and_scRNAseq_object_refined_annotations.rds")
 
 ```
-
-## Plotting 
-
-```{r}
-
-ser_split <- SplitObject(ser_comb,split.by="data_type")
-
-p1 <- DimPlot(ser_split[[1]],group.by="final_cell_annot") +
-    ggtitle("scRNAseq") +
-    theme(legend.position="none")
-p2 <- DimPlot(ser_split[[2]],group.by="final_cell_annot") +
-    ggtitle("Nanostring CosMx") +
-    theme(legend.position="none")
-
-p1 / p2 
-
-```
-

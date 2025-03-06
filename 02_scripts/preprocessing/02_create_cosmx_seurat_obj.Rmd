@@ -1,185 +1,57 @@
 ---
 title: "SARC028 CosMX - Create Seruat Object"
 author: "Anthony R Cillo"
-date: "June 17 2024"
+date: "March 6, 2025"
 output: html_document
 ---
 
 ## Introduction
 
+Here, we will utilize Seurat to create an object containing the SARC028 CosMx data.
+
 ## Load packages
 
 ```{r}
 
-.libPaths("/ihome/acillo/arc85/Rlibs_Mar_2023")
+.libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
 
 suppressMessages({
     library(Seurat)
     library(tidyverse)
     library(patchwork)
+    library(here)
 })
 
 ```
 
-## Read in data
+## Read in CosMx Data
 
 ```{r}
 
-ser_cos <- LoadNanostring(data.dir = "../01_input_data/R5620_Sarc028",fov="1")
+ser_cos <- LoadNanostring(data.dir = "../../01_input/SARC028_CosMx",fov="1")
 
 ```
 
-## Add metadata 
+## Load compiled metadata and clinical data 
 
 ```{r}
 
-## Add FOV as metadata
-ser_cos@meta.data$fov_selected <- sapply(strsplit(colnames(ser_cos),split="_"),function(x) x[[2]])
-
-## Add patient identifiers
-### Based on powerpoint showing PID locations on microarray
-pid_annot <- ser_cos@meta.data
-
-pid_annot <- pid_annot %>%
-    mutate(pid_timepoint=recode(fov_selected,
-                                "1" = "TFP-15-276-B_Base",
-                                "2" = "TFP-15-276-A_Base",
-                                "4" = "048-033_Base",
-                                "5" = "048-031_Base",
-                                "7" = "TFP-15-261-A_Post",
-                                "8" = "TFP-15-192_Post",
-                                "9" = "092-040_Post__1",
-                                "10" = "092-040_Post__2",
-                                "11" = "048-040_Post__1",
-                                "12" = "048-040_Post__2",
-                                "13" = "048-040_Post__3",
-                                "14" = "048-057_Base",
-                                "15" = "TFP-15-135_Post",
-                                "16" = "048-040_Base__1",
-                                "17" = "048-040_Base__2",
-                                "18" = "048-040_Base__3",
-                                "19" = "TPF-15-273_Post",
-                                "20" = "TPF-15-193_Post",
-                                "21" = "071-052_Post",
-                                "22" = "048-025_Post__1",
-                                "23" = "048-025_Post__2",
-                                "24" = "048-025_Post__3",
-                                "25" = "TPF-15-133_Base__1",
-                                "26" = "TPF-15-133_Base__2"
-                                ))
-
-table(pid_annot$pid_timepoint)
-
-ser_cos@meta.data$pid_timepoint <- pid_annot$pid_timepoint
-
-ser_cos@meta.data$pid <- sapply(strsplit(ser_cos@meta.data$pid_timepoint,split="_"),
-                                          function(x) x[[1]])
-
-ser_cos@meta.data$timepoint <- sapply(strsplit(ser_cos@meta.data$pid_timepoint,split="_"),
-                                          function(x) x[[2]])
-
-table(ser_cos@meta.data$pid)
-
-table(ser_cos@meta.data$timepoint)
-
-## Read in and clean clinical data
-clin_part1 <- readr::read_csv("../01_input_data/SARC028_Ewings_Response_Data_part1.csv")
-clin_part2 <- readr::read_csv("../01_input_data/SARC028_Tumor_and_Response_Data_part2.csv")
-clin_part3 <- xlsx::read.xlsx("../01_input_data/sarc028_response_data_kelly_230912.xlsx",
-                  sheetIndex=1)
-
-colnames(clin_part3) <- c("annot_sample","Subject_timepoint","deident_id",
-                    "clinical_response_size")
-
-## Full join 1 and 2 to conver those PIDs missing from par 3
-clin_1_2 <- full_join(clin_part1,clin_part2,by="Subject")
-
-colnames(clin_1_2) <- c("Subject","tumor_resp_date","tumor_resp","best_resp",
-                    "perc_change")
-
-clin_1_2 <- clin_1_2 %>%
-    mutate(best_resp=ifelse(is.na(best_resp),tumor_resp,best_resp)) %>%
-  select(Subject,best_resp,perc_change) %>%
-  distinct()
-
-clin_part3 <- clin_part3 %>%
-    mutate(Subject=sapply(strsplit(Subject_timepoint,split=" "),function(x) x[[1]])) %>%
-    mutate(timepoint=sapply(strsplit(Subject_timepoint,split=" "),function(x) x[[2]])) %>%
-    mutate(timepoint=gsub(" +","",timepoint)) %>%
-    mutate(deident_id=sapply(strsplit(deident_id,split="-"),function(x) x[[1]])) %>%
-    mutate(deident_id=gsub("t ","t_",deident_id)) %>%
-    mutate(deident_id=trimws(deident_id)) %>%
-    mutate(deident_id=gsub("p","P",deident_id)) %>%
-    mutate(perc_change=gsub(".*?([0-9]+).*","\\1",clinical_response_size)) %>%
-    mutate(best_resp=gsub("[[:digit:]]","",clinical_response_size)) %>%
-    select(Subject,best_resp,perc_change,deident_id) %>%
-    distinct()
-
-clin_part3$deident_id[11] <- "Patient_13"
-
-clin_part3$perc_change <- as.double(clin_part3$perc_change)
-
-clin <- full_join(clin_1_2,clin_part3,by=c("Subject","best_resp","perc_change"))
-
-clin <- clin %>%
-    mutate(pid=recode(Subject,
-                      `TPF-15-276A`="TFP-15-276-A",
-                      `TPF-15-276B`="TFP-15-276-B",
-                      `TPF-15-261A`="TFP-15-261-A",
-                      `TPF-15-135`="TFP-15-135",
-                      `TPF-15-192`="TFP-15-192"),
-           )
-
-intersect(clin$pid,ser_cos@meta.data$pid)
-
-setdiff(ser_cos@meta.data$pid,clin$pid)
-
-setdiff(clin$pid,ser_cos@meta.data$pid)
-
-clin <- clin %>%
-    mutate(best_resp=ifelse(grepl("prog|Prog",best_resp),
-                                "Progressive disease",best_resp)) %>%
-    mutate(best_resp=ifelse(grepl("stable|Stable",best_resp),
-                            "Stable disease",best_resp)) %>%
-    mutate(perc_change=round(perc_change,digits=0)) %>%
-    filter(!is.na(deident_id)) %>%
-    distinct()
-
-test_meta <- left_join(ser_cos@meta.data,clin,by=c("pid"))
-
-table(test_meta$deident_id)
-table(test_meta$timepoint)
-table(test_meta$best_resp)
-
-## Add to orig object
-ser_cos@meta.data$tumor_perc_change <- as.numeric(test_meta$perc_change)
-ser_cos@meta.data$log_tumor_perc_change <- log(as.numeric(test_meta$perc_change))
-ser_cos@meta.data$deident_id <- test_meta$deident_id
-ser_cos@meta.data$best_resp <- test_meta$best_resp
-
-## Plots to check out metadata
-ImageDimPlot(ser_cos,group.by="timepoint")
-
-ImageDimPlot(ser_cos,group.by="timepoint")
+metadata_to_add <- readRDS("../../01_input/SARC028_CosMx_deident_metadata.rds")
 
 ```
 
-## Standard workflow for clustering 
+## Add metadata to Seurat obj
 
 ```{r}
 
-ser_cos <- SCTransform(ser_cos, assay = "Nanostring", clip.range = c(-10, 10))
-ser_cos <- RunPCA(ser_cos, npcs = 30, features = rownames(ser_cos))
+identical(metadata_to_add$cb,colnames(ser_cos))
 
-ElbowPlot(ser_cos)
-
-ser_cos <- RunUMAP(ser_cos, dims = 1:9)
-ser_cos <- FindNeighbors(ser_cos, reduction = "pca", dims = 1:9)
-ser_cos <- FindClusters(ser_cos, resolution = c(0.3,0.5,0.7))
-
-DimPlot(ser_cos,group.by="SCT_snn_res.0.3",label=T)
-
-Idents(ser_cos) <- "SCT_snn_res.0.3"
+ser_cos@meta.data$fov_selected <- metadata_to_add$fov_selected
+ser_cos@meta.data$deident_id <- metadata_to_add$deident_id
+ser_cos@meta.data$timepoint <- metadata_to_add$timepoint
+ser_cos@meta.data$tumor_perc_change <- metadata_to_add$tumor_perc_change
+ser_cos@meta.data$log_tumor_perc_change <- metadata_to_add$log_tumor_perc_change
+ser_cos@meta.data$best_resp <- metadata_to_add$best_resp
 
 ```
 
@@ -187,6 +59,6 @@ Idents(ser_cos) <- "SCT_snn_res.0.3"
 
 ```{r}
 
-saveRDS(ser_cos,file="../03_output/sarc028_cosmx_seurat_obj_240617.rds")
+saveRDS(ser_cos,file="../../03_output/SARC028_CosMx_object.rds")
 
 ```

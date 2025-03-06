@@ -1,37 +1,46 @@
 ---
-title: "Create reference for COSMx Analysis"
+title: "Create scRNAseq Reference"
 author: "Anthony R Cillo"
-date: "July 16 2016"
+date: "March 6, 2025"
 output: html_document
 ---
 
 ## Introduction
 
-Kelly Bailey had some single-cell RNAseq data from two patients with Ewing sarcoma. We will utilize these samples here to create a reference dataset reflective of the TME of patients with Ewing sarcoma for integration with the CosMX spatial data.
-
-We will also integrate these samples with samples from our previously published Ewing and Osteosarcoma paper.
+Here, we will create a single cell reference from our [published work](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE198896) and from single-cell RNAseq from two additional patients with Ewing sarcoma. 
 
 ## Load packages
 
 ```{r}
 
-.libPaths("/ihome/acillo/arc85/Rlibs_Mar_2023")
+.libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
 
 suppressMessages({
 library(Seurat)
 library(tidyverse)
 library(patchwork)
+library(here)
 })
 
 ```
 
-## Read in Ewing data 
+## Load previously published data 
 
 ```{r}
 
-ewing_path <- "/ix1/acillo/arc85/01_from_dvignali/02_in_progress/sarcoma_analysis_230801/01_input_data/ewing_align_230811"
-sample1 <- "/3_042523_Bailey_GEX_LAF5160A88/outs/filtered_feature_bc_matrix"
-sample2 <- "/6_042523_Bailey_GEX_LAF5160A89/outs/filtered_feature_bc_matrix"
+ewing_pub <- readRDS("../../01_input/cillo_et_al_ccr_2022_ewing_til.rds")
+
+table(ewing_pub@meta.data$tissue,ewing_pub@meta.data$sample_type)
+
+```
+
+## Read in new Ewing data 
+
+```{r}
+
+ewing_path <- "../../01_input/ewing_scrnaseq_new/"
+sample1 <- "LAF5160A88/filtered_feature_bc_matrix"
+sample2 <- "LAF5160A89/filtered_feature_bc_matrix"
 ewing_samples <- c(paste(ewing_path,sample1,sep=""),paste(ewing_path,sample2,sep=""))
 
 ewing_dat <- vector("list",length=2)
@@ -45,21 +54,7 @@ for (i in 1:2) {
 ewing_dat[[1]]@meta.data$sample <- "LAF5160A88"
 ewing_dat[[2]]@meta.data$sample <- "LAF5160A89"
 
-ewing_comb <- merge(ewing_dat[[1]],ewing_dat[[2]])
-
-```
-
-## Read in previously published data 
-
-```{r}
-
-load("../01_input_data/sarcoma_integrated_identified_filtered.21.03.19.RData")
-
-table(sarcoma.int@meta.data$cell_types)
-
-table(sarcoma.int@meta.data$sample_type)
-
-DimPlot(sarcoma.int,group.by="cell_types")
+ewing_new <- merge(ewing_dat[[1]],ewing_dat[[2]])
 
 ```
 
@@ -68,34 +63,19 @@ DimPlot(sarcoma.int,group.by="cell_types")
 ```{r}
 
 ## Filter to shared genes
-DefaultAssay(sarcoma.int) <- "RNA"
+DefaultAssay(ewing_pub) <- "RNA"
 
 set1 <- rownames(ewing_comb)
-set2 <- rownames(sarcoma.int)
+set2 <- rownames(ewing_pub)
 
 genes_use <- intersect(set1,set2)
 
-sarcoma.int <- sarcoma.int[genes_use,]
+ewing_pub <- ewing_pub[genes_use,]
 
-ewing_comb <- ewing_comb[genes_use,]
-
-## Filter published dataset to only Ewing TIL 
-table(sarcoma.int@meta.data$sample_type)
-
-ewing_pub <- sarcoma.int[,sarcoma.int@meta.data$sample_type=="Ewing" &
-                          sarcoma.int@meta.data$tissue=="TIL"]
-
-## Remove basophil like cells
-ewing_pub <- ewing_pub[,!ewing_pub@meta.data$cell_types=="Basophil"]
-
-DimPlot(ewing_pub,group.by="cell_types")
+ewing_new <- ewing_new[genes_use,]
 
 ## Combine data 
-dat_comb <- merge(ewing_pub,ewing_comb)
-
-table(dat_comb@meta.data$cell_type,useNA="always")
-
-ewing_comb <- dat_comb
+ewing_comb <- merge(ewing_pub,ewing_new)
 
 DefaultAssay(ewing_comb) <- "RNA"
 
@@ -143,13 +123,6 @@ ewing_list <- PrepSCTIntegration(object.list = ewing_list, anchor.features = fea
 
 features <- SelectIntegrationFeatures(object.list = ewing_list, nfeatures = 2000)
 
-saveRDS(list(ewing_list,features),file="ewing_list_temp_file_240716.rds")
-
-## Restarted R - load ewing_list
-#ewing_list <- readRDS("ewing_list_temp_file_231204.rds")
-#features <- ewing_list[[2]]
-#ewing_list <- ewing_list[[1]]
-
 ewing_anchors <- FindIntegrationAnchors(object.list = ewing_list,
                                         normalization.method = "SCT",
                                         anchor.features = features
@@ -169,8 +142,6 @@ p1 <- DimPlot(ewing_comb_sct, reduction = "umap", group.by = "sample")
 p2 <- DimPlot(ewing_comb_sct, reduction = "umap", group.by="integrated_snn_res.0.5",label = TRUE, repel = TRUE)
 p1 + p2
 
-DimPlot(ewing_comb_sct,group.by="cell_types")
-
 DefaultAssay(ewing_comb_sct) <- "RNA"
 
 ewing_comb_sct <- NormalizeData(ewing_comb_sct)
@@ -184,22 +155,11 @@ p5 <- FeaturePlot(ewing_comb_sct,c("CD3D","CD8A","CD14","PTPRC"))
 
 p3 + p4 + p5
 
-FeaturePlot(ewing_comb_sct,c("EPCAM","PTPRC","CD99","FLI1","CAV1","MMP9"))
+FeaturePlot(ewing_comb_sct,c("EPCAM","PTPRC","CD99","FLI1","CAV1","MMP9","COL1A1"))
 
 metadata <- ewing_comb_sct@meta.data
 
-VlnPlot(ewing_comb_sct,group.by="integrated_snn_res.0.5",features="MZB1")
-
 Idents(ewing_comb_sct) <- "integrated_snn_res.0.5"
-
-cluster21_degs <- FindMarkers(ewing_comb_sct,ident.1="21",logfc.threshold=1)
-
-cluster21_degs %>%
-    arrange(desc(avg_log2FC)) %>%
-    head(n=20)
-
-## Note: MMP9, CTSK = Osteoclasts
-## Note: COL1A1 = Fibroblasts
 
 metadata <- metadata %>%
     mutate(crude_cell_types=recode(integrated_snn_res.0.5,
@@ -236,116 +196,12 @@ DimPlot(ewing_comb_sct,group.by="scrnaseq_crude_cell_types",label=T,repel=T)
 
 ```
 
-## Split into cell types
-
-```{r}
-
-metadata <- ewing_comb_sct@meta.data
-
-metadata <- metadata %>%
-    mutate(cell_class=ifelse(grepl("Tumor",integrated_cell_types),"Malignant","Immune")) %>%
-    mutate(cell_class=ifelse(grepl("Fibroblasts|Osteoclasts",integrated_cell_types),"Non-immune",
-                             cell_class))
-
-ewing_comb_sct@meta.data$cell_class <- metadata$cell_class
-
-DimPlot(ewing_comb_sct,group.by="integrated_cell_types",split.by="cell_class",label=T,repel=T)
-
-```
-
 ## Save results 
 
 ```{r}
 
-saveRDS(ewing_comb_sct,file="../03_output/Ewing_combined_seurat_file_240716.rds")
-
-# saveRDS(degs,file="../03_output/Ewing_scrnaseq_seurat_integrated_res05_degs_231204.rds")
+saveRDS(ewing_comb_sct,file="../../03_output/Ewing_scRNAseq_reference.rds")
 
 ```
 
-## Aside 1
 
-Analysis for Jessie's paper - Note, this was performed on older analysis from Dec 2023
-
-```{r}
-
-ewing_comb_sct <- readRDS("../03_output/Ewing_combined_seurat_file_231204.rds")
-
-table(ewing_comb_sct@meta.data$sample)
-
-p1 <- FeaturePlot(ewing_comb_sct,"TGFB1")
-
-p2 <- DimPlot(ewing_comb_sct,group.by="integrated_cell_types",label=T)
-
-pdf("../03_output/ewing_tgfbeta_231208.pdf",useDingbats=F,height=6,width=14)
-p1 + p2 + plot_layout(ncol=2)
-dev.off()
-
-```
-
-## Aside 2
-
-Count matrix of new samples for Riyue
-
-```{r}
-
-ewing_comb_sct <- readRDS("../03_output/Ewing_combined_seurat_file_231204.rds")
-
-DefaultAssay(ewing_comb_sct) <- "RNA"
-
-cd4_tconv_degs <- FindMarkers(ewing_comb_sct,ident.1="CD4+ Tconv",logfc.threshold=0.5)
-
-tumor_cells_9 <- FindMarkers(ewing_comb_sct,ident.1="Tumor cells 9",logfc.threshold=0.5)
-
-cd4_tconv_degs %>%
-    filter(avg_log2FC>0) %>%
-    filter(p_val_adj<0.05)
-
-tumor_cells_9 %>%
-    filter(avg_log2FC>0) %>%
-    filter(p_val_adj<0.05)
-
-ewing_sub_test <- ewing_comb_sct[,ewing_comb_sct@meta.data$integrated_cell_types %in% c("CD4+ Tconv","CD4+ Treg","CD8+ T cells","NK cells")]
-
-
-ewing_comb_sub <- ewing_comb_sct[,ewing_comb_sct@meta.data$sample %in% c("LAF5160A88","LAF5160A89")]
-
-table(ewing_comb_sub@meta.data$sample)
-
-count_mat <- GetAssayData(ewing_comb_sub,slot="counts",assay="RNA")
-
-metadata <- ewing_comb_sub@meta.data[,c(1:3,8:10,18:21,23)]
-metadata$sample <- ewing_comb_sub@meta.data$sample
-
-saveRDS(count_mat,"../03_output/Ewing_2_samples_count_mat_231208.rds")
-saveRDS(metadata,"../03_output/Ewing_2_samples_metadata_231208.rds")
-
-saveRDS(metadata,"../03_output/Ewing_2_samples_metadata_231218.rds")
-
-```
-
-## Aside 3
-
-CD40 expression for Kelly
-
-```{r}
-
-ewing_comb_sct <- readRDS("../03_output/Ewing_combined_seurat_file_240716.rds")
-
-p1 <- FeaturePlot(ewing_comb_sct,"CD40")
-p2 <- DimPlot(ewing_comb_sct,group.by="scrnaseq_crude_cell_types")
-p3 <- VlnPlot(ewing_comb_sct,group.by="scrnaseq_crude_cell_types","CD40")
-p4 <- DotPlot(ewing_comb_sct,group.by="scrnaseq_crude_cell_types",features="CD40")
-
-pdf("ewing_cd40_plots_240910.pdf",width=11,height=8.5,useDingbats=F)
-p1
-p2
-p3
-p4
-dev.off()
-
-pdf("ewing_cd40_plots_240910.pdf",width=11*0.8,height=8.5*0.8,useDingbats=F)
-p4
-dev.off()
-
-```
