@@ -261,10 +261,12 @@ DimPlot(ser_comb,group.by="final_cell_annot")
 
 ```
 
-## Save results 
+## Save results and session info
 
 ```{r}
 
-saveRDS(ser_comb,file="../../03_output/SARC028_CosMx_and_scRNAseq_object_refined_annotations.rds")
+# saveRDS(ser_comb,file="../../03_output/SARC028_CosMx_and_scRNAseq_object_refined_annotations.rds")
+
+sessionInfo()
 
 ```

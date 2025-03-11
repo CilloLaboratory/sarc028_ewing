@@ -1,7 +1,7 @@
 ---
 title: "Integrate CosMX and scRNAseq"
 author: "Anthony R Cillo"
-date: "March 6 2025"
+date: "March 6, 2025"
 output: html_document
 ---
 
@@ -169,10 +169,12 @@ DimPlot(ser_comb,group.by="initial_cell_annot")
 
 ```
 
-## Save results 
+## Save results and session info
 
 ```{r}
 
-saveRDS(ser_comb,file="../../03_output/SARC028_CosMx_and_scRNAseq_object.rds")
+# saveRDS(ser_comb,file="../../03_output/SARC028_CosMx_and_scRNAseq_object.rds")
+
+sessionInfo()
 
 ```

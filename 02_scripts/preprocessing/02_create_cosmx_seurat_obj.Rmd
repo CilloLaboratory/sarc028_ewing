@@ -55,10 +55,11 @@ ser_cos@meta.data$best_resp <- metadata_to_add$best_resp
 
 ```
 
-## Save combined seurat object
+## Save and session info
 
 ```{r}
 
-saveRDS(ser_cos,file="../../03_output/SARC028_CosMx_object.rds")
+# saveRDS(ser_cos,file="../../03_output/SARC028_CosMx_object.rds")
+sessionInfo()
 
 ```

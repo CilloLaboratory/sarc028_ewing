@@ -65,7 +65,7 @@ ewing_new <- merge(ewing_dat[[1]],ewing_dat[[2]])
 ## Filter to shared genes
 DefaultAssay(ewing_pub) <- "RNA"
 
-set1 <- rownames(ewing_comb)
+set1 <- rownames(ewing_new)
 set2 <- rownames(ewing_pub)
 
 genes_use <- intersect(set1,set2)
@@ -196,12 +196,12 @@ DimPlot(ewing_comb_sct,group.by="scrnaseq_crude_cell_types",label=T,repel=T)
 
 ```
 
-## Save results 
+## Save results and session info
 
 ```{r}
 
-saveRDS(ewing_comb_sct,file="../../03_output/Ewing_scRNAseq_reference.rds")
+# saveRDS(ewing_comb_sct,file="../../03_output/Ewing_scRNAseq_reference.rds")
+
+sessionInfo()
 
 ```
-
-
