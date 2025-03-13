@@ -1,0 +1,229 @@
+---
+title: "Figure 3 Construction"
+author: "Anthony R Cillo"
+date: "March 6 2025"
+output: html_document
+---
+
+## Load packages
+
+```{r}
+
+library(tidyverse)
+library(irlba)
+library(ggplot2)
+library(patchwork)
+library(xlsx)
+library(ggplotify)
+library(here)
+
+```
+
+## Load data
+
+```{r}
+
+## Read in GeoMx data
+geomx_data <- readRDS("../../01_input/SARC028_GeoMx_Expression_and_Metadata.rds")
+
+row_data <- geomx_data$geomx_feature_data
+meta_data <- geomx_data$geomx_meta
+expr_data <- geomx_data$geomx_expr
+
+```
+
+## Normalization strategy
+
+Rather than directly correcting for AOI surface area, we will attempt to log normalize the protein counts based on the total counts per ROI, which should be correlated with the AOI surface area. 
+
+```{r}
+
+data_expr_fil <- expr_data[!row_data$code_class %in% c("Control","Negative"),]
+rownames(data_expr_fil) <- row_data %>%
+  filter(!code_class %in% c("Control","Negative")) %>%
+  pull(gene)
+
+data_expr_fil <- data_expr_fil %>%
+  as_tibble(.,rownames="genes")
+
+log_normalize <- function(x) {
+  log(x/sum(x)*1000)
+}
+
+data_norm <- apply(data_expr_fil[,2:ncol(data_expr_fil)],2,log_normalize)
+
+```
+
+## PCA with log normalized data 
+
+```{r}
+
+set.seed(123456)
+
+pca_res <- prcomp_irlba(t(data_norm),center=TRUE,scale.=TRUE)
+plot(pca_res)
+
+pca_x <- pca_res$x
+pca_x <- cbind(meta_data,pca_x)
+
+pca_x %>%
+  ggplot(.,aes(x=PC1,PC2,colour=log(aoi_surface_area))) +
+    geom_point() +
+    theme_bw()
+
+pca_x %>%
+  ggplot(.,aes(x=PC1,PC2,colour=segment_name_label)) +
+    geom_point() +
+    theme_bw()
+
+p2 <- pca_x %>%
+  ggplot(.,aes(x=PC1,PC2,colour=timepoint)) +
+    geom_point() +
+    facet_wrap(~segment_name_label) +
+    theme_bw()
+
+```
+
+## DEGs with specific regions
+
+```{r}
+
+data_norm_meta <- rbind(data_norm,t(meta_data)) %>%
+  t() %>%
+  data.frame() %>%
+  as_tibble()
+
+data_norm_meta %>% 
+  data.frame() %>%
+  select(segment_name_label,timepoint) %>%
+  table()
+
+colnames(data_norm_meta)[1:62] <- data_expr_fil$genes
+
+pre_post_degs_segments <- data_norm_meta %>%
+  select(-roi_id,-segment,-roi_x_coord,-roi_y_coord,-aoi_surface_area,-aoi_nuclei_count,-slide,-roi,-sample_identifier) %>%
+  gather(gene,value,-segment_name_label,-timepoint,-deident_id) %>%
+  mutate(value=as.numeric(value)) %>%
+  mutate(timepoint=as.factor(timepoint)) %>%
+  filter(!segment_name_label=="Tumor") %>% 
+  split(.$segment_name_label) %>%
+  lapply(.,function(x) {
+    x %>%
+      split(.$gene) %>%
+        map(~wilcox.test(.$value~.$timepoint,data=.)$p.value)
+  })
+ 
+degs_sig <- pre_post_degs_segments %>%
+  lapply(.,function(x) {
+    x[x<0.05]
+  })
+
+```
+
+## Heatmaps for distinct subsets - Stromal region
+
+```{r}
+
+stromal_genes <- names(degs_sig$Stroma)
+annot_col <- data_norm_meta %>% 
+  filter(segment_name_label=="Stroma") %>%
+  select(timepoint) %>%
+  data.frame()
+annot_col$timepoint <- as.factor(annot_col$timepoint)
+
+pid_names <- data_norm_meta %>% 
+  filter(segment_name_label=="Stroma") %>%
+  select(timepoint,deident_id) %>%
+  mutate(pid=paste(deident_id,seq(1,21,1),sep="__")) 
+
+rownames(annot_col) <- pid_names$pid
+
+heat_dat <- data_norm_meta %>% 
+  filter(segment_name_label=="Stroma") %>%
+  select(-timepoint,-segment_name_label) %>%
+  select(data_expr_fil$genes) %>%
+  as.matrix() %>%
+  apply(.,2,as.numeric) %>% 
+  scale() %>%
+  t()
+colnames(heat_dat) <- pid_names$pid
+
+p3 <- ggplotify::as.ggplot(
+  pheatmap::pheatmap(heat_dat,scale="none",annotation_col = annot_col,fontsize = 12,
+                   fontsize_row=6,border_color=NA,color=colorRampPalette(colors=c("purple","black","yellow"))(100))
+)
+
+```
+
+## Heatmaps for distinct subsets - Full ROI
+
+```{r}
+
+full_roi_genes <- names(degs_sig$`Full ROI`)
+annot_col <- data_norm_meta %>% 
+  filter(segment_name_label=="Full ROI") %>%
+  select(timepoint) %>%
+  data.frame()
+annot_col$timepoint <- as.factor(annot_col$timepoint)
+
+pid_names <- data_norm_meta %>% 
+  filter(segment_name_label=="Full ROI") %>%
+  select(timepoint,deident_id) %>%
+  mutate(pid=paste(deident_id,seq(1,21,1),sep="__")) 
+
+rownames(annot_col) <- pid_names$pid
+
+heat_dat <- data_norm_meta %>% 
+  filter(segment_name_label=="Full ROI") %>%
+  select(-timepoint,-segment_name_label) %>%
+  select(data_expr_fil$genes) %>%
+  as.matrix() %>%
+  apply(.,2,as.numeric) %>% 
+  scale() %>%
+  t()
+colnames(heat_dat) <- pid_names$pid
+
+p4 <- ggplotify::as.ggplot(
+  pheatmap::pheatmap(heat_dat,scale="none",annotation_col = annot_col,fontsize = 12,
+                   fontsize_row=6,border_color=NA,color=colorRampPalette(colors=c("purple","black","yellow"))(100))
+)
+
+```
+
+## Plots of DEGs in Full ROI and stroma
+
+```{r}
+
+expr_tumor_stroma <- data_norm_meta %>%
+  select(-roi_id,-segment,-roi_x_coord,-roi_y_coord,-aoi_surface_area,-aoi_nuclei_count,-slide,-roi) %>%
+  gather(gene,value,-segment_name_label,-timepoint,-deident_id) %>%
+  mutate(value=as.numeric(value)) %>%
+  mutate(timepoint=as.factor(timepoint)) %>%
+  filter(segment_name_label %in% c("Full ROI","Stroma")) %>% 
+  split(.$segment_name_label)
+
+degs_sub_list <- degs_sig[3:4]
+
+deg_plots <- mapply(function(x,y) {
+  x %>%
+    filter(gene %in% names(y)) %>%
+    ggplot(.,aes(x=timepoint,y=value,fill=timepoint)) +
+    geom_boxplot() +
+    theme_bw() +
+    facet_wrap(~gene)
+},
+expr_tumor_stroma,degs_sub_list,SIMPLIFY = F)
+
+```
+
+## View plots
+
+```{r}
+
+p2
+p3
+deg_plots[[2]]
+p4
+deg_plots[[1]] 
+
+```
