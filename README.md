@@ -6,4 +6,4 @@ All code is provided as raw (.Rmd) rendered (.html) Rmarkdown files. The rendere
 ## Downloading data
 The data necessary to recreate the analyses is available from [our record on Zenodo](https://zenodo.org/records/14982967). To execute the Rmarkdown files included in this repositry:
 - Download the data from Zenodo into the 01_input directory of this repository
-- Untar the compressed files 
+- Decompress the data files to use as input into the preprocessing and figure scripts
