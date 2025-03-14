@@ -4,23 +4,9 @@ Load packages
     .libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
 
     library(tidyverse)
-
-    ## ── Attaching core tidyverse packages ───────────────────────────────────────────── tidyverse 2.0.0 ──
-    ## ✔ dplyr     1.1.0     ✔ readr     2.1.4
-    ## ✔ forcats   1.0.0     ✔ stringr   1.5.0
-    ## ✔ ggplot2   3.4.1     ✔ tibble    3.1.8
-    ## ✔ lubridate 1.9.2     ✔ tidyr     1.3.0
-    ## ✔ purrr     1.0.1     
-    ## ── Conflicts ─────────────────────────────────────────────────────────────── tidyverse_conflicts() ──
-    ## ✖ dplyr::filter() masks stats::filter()
-    ## ✖ dplyr::lag()    masks stats::lag()
-    ## ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
-
     library(ggplot2)
     library(patchwork)
     library(here)
-
-    ## here() starts at /ix1/acillo/arc85/03_workspace/20_sarc028_ewing/sarc028_ewing
 
 Load data
 ---------
@@ -490,12 +476,13 @@ Session info
     ## 
     ## loaded via a namespace (and not attached):
     ##  [1] highr_0.9          RColorBrewer_1.1-3 pillar_1.8.1       compiler_4.2.0    
-    ##  [5] tools_4.2.0        digest_0.6.30      timechange_0.2.0   evaluate_0.15     
-    ##  [9] lifecycle_1.0.3    gtable_0.3.1       pkgconfig_2.0.3    rlang_1.1.1       
-    ## [13] cli_3.6.0          yaml_2.3.6         xfun_0.40          fastmap_1.1.0     
-    ## [17] withr_2.5.0        knitr_1.39         generics_0.1.3     vctrs_0.5.2       
-    ## [21] hms_1.1.2          rprojroot_2.0.3    grid_4.2.0         tidyselect_1.2.0  
-    ## [25] glue_1.6.2         R6_2.5.1           fansi_1.0.3        farver_2.1.1      
-    ## [29] tzdb_0.3.0         magrittr_2.0.3     scales_1.3.0       htmltools_0.5.6.1 
-    ## [33] ellipsis_0.3.2     colorspace_2.0-3   labeling_0.4.2     utf8_1.2.2        
-    ## [37] stringi_1.7.8      munsell_0.5.0
+    ##  [5] yulab.utils_0.0.4  tools_4.2.0        digest_0.6.30      timechange_0.2.0  
+    ##  [9] evaluate_0.15      lifecycle_1.0.3    gtable_0.3.1       pkgconfig_2.0.3   
+    ## [13] rlang_1.1.1        ggplotify_0.1.0    cli_3.6.0          yaml_2.3.6        
+    ## [17] xfun_0.40          fastmap_1.1.0      withr_2.5.0        knitr_1.39        
+    ## [21] gridGraphics_0.5-1 generics_0.1.3     vctrs_0.5.2        hms_1.1.2         
+    ## [25] cowplot_1.1.1      rprojroot_2.0.3    grid_4.2.0         tidyselect_1.2.0  
+    ## [29] glue_1.6.2         R6_2.5.1           fansi_1.0.3        pheatmap_1.0.12   
+    ## [33] farver_2.1.1       tzdb_0.3.0         magrittr_2.0.3     scales_1.3.0      
+    ## [37] htmltools_0.5.6.1  ellipsis_0.3.2     colorspace_2.0-3   labeling_0.4.2    
+    ## [41] utf8_1.2.2         stringi_1.7.8      munsell_0.5.0

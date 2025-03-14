@@ -235,8 +235,8 @@ Plots of DEGs in Full ROI and stroma
     },
     expr_tumor_stroma,degs_sub_list,SIMPLIFY = F)
 
-View plots
-----------
+Show figure components
+----------------------
 
     p2
 
