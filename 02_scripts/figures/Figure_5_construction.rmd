@@ -2,12 +2,14 @@
 title: "Figure 5 Construction"
 author: "Anthony R Cillo"
 date: "March 6 2025"
-output: html_document
+output: md_document
 ---
 
 ## Load packages
 
 ```{r}
+
+.libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
 
 library(tidyverse)
 library(ggplot2)
@@ -184,12 +186,20 @@ p4 <- ggplotify::as.ggplot(pheatmap::pheatmap(heat_dat_plot,scale="column",fonts
 
 ```
 
-## Show plot components 
+## Show figure components 
 
 ```{r}
 
 p2
 p3
 p4
+
+```
+
+## Session info
+
+```{r}
+
+sessionInfo()
 
 ```

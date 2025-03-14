@@ -2,12 +2,14 @@
 title: "Figure 6 Construction"
 author: "Anthony R Cillo"
 date: "March 6 2025"
-output: html_document
+output: md_document
 ---
 
 ## Load packages
 
 ```{r}
+
+.libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
 
 library(tidyverse)
 library(ggplot2)
@@ -252,26 +254,26 @@ cor.test(ifn_hla_stats$hla_mean,ifn_hla_stats$ifng_mean,method="spearman")
 
 ```{r}
 
-dat_comb_meta %>%
+cosmx_gene_sets %>%
   filter(final_cell_annot %in% c("Tumor_cells_c5","Tumor_cells_c4","Tumor_cells_c1")) %>%
-  select(cellID,final_cell_annot,KINSEY_TARGETS_OF_EWSR1_FLII_FUSION_UP,HALLMARK_TGF_BETA_SIGNALING,HLA_signature,HALLMARK_INTERFERON_ALPHA_RESPONSE) %>%
+  select(final_cell_annot,KINSEY_TARGETS_OF_EWSR1_FLII_FUSION_UP,HALLMARK_TGF_BETA_SIGNALING,HLA_signature,HALLMARK_INTERFERON_ALPHA_RESPONSE) %>%
   distinct() %>%
-  gather(gene_set,values,-final_cell_annot,-cellID) %>% 
+  gather(gene_set,values,-final_cell_annot) %>% 
   split(.$gene_set) %>%
   map(~lm(values~final_cell_annot,data=.)) %>%
   map(~summary(.))
 
-dat_comb_meta %>%
+cosmx_gene_sets %>%
   filter(final_cell_annot %in% c("Tumor_cells_c5","Tumor_cells_c4","Tumor_cells_c1")) %>%
-  select(cellID,final_cell_annot,KINSEY_TARGETS_OF_EWSR1_FLII_FUSION_UP,HALLMARK_TGF_BETA_SIGNALING,HLA_signature,HALLMARK_INTERFERON_ALPHA_RESPONSE) %>%
+  select(final_cell_annot,KINSEY_TARGETS_OF_EWSR1_FLII_FUSION_UP,HALLMARK_TGF_BETA_SIGNALING,HLA_signature,HALLMARK_INTERFERON_ALPHA_RESPONSE) %>%
   distinct() %>%
-  gather(gene_set,values,-final_cell_annot,-cellID) %>% 
+  gather(gene_set,values,-final_cell_annot) %>% 
   split(.$gene_set) %>%
   map(~pairwise.wilcox.test(.$values,.$final_cell_annot,data=.))
 
 ```
 
-## Construct plot 
+## Show figure components
 
 ```{r}
 
@@ -285,5 +287,13 @@ p7
 p8
 p9
 p10
+
+```
+
+## Session info
+
+```{r}
+
+sessionInfo()
 
 ```

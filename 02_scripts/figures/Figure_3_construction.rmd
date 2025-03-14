@@ -2,12 +2,14 @@
 title: "Figure 3 Construction"
 author: "Anthony R Cillo"
 date: "March 6 2025"
-output: html_document
+output: md_document
 ---
 
 ## Load packages
 
 ```{r}
+
+.libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
 
 library(tidyverse)
 library(irlba)
@@ -216,7 +218,7 @@ expr_tumor_stroma,degs_sub_list,SIMPLIFY = F)
 
 ```
 
-## View plots
+## Show figure components
 
 ```{r}
 
@@ -225,5 +227,13 @@ p3
 deg_plots[[2]]
 p4
 deg_plots[[1]] 
+
+```
+
+## Session info
+
+```{r}
+
+sessionInfo()
 
 ```

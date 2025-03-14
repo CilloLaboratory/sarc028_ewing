@@ -2,12 +2,14 @@
 title: "Figure 4 Construction"
 author: "Anthony R Cillo"
 date: "March 6 2025"
-output: html_document
+output: md_document
 ---
 
 ## Load packages
 
 ```{r}
+
+.libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
 
 library(tidyverse)
 library(ggplot2)
@@ -144,7 +146,7 @@ p6 <- dat_comb_meta %>%
 
 ```
 
-## Show components of plot
+## Show figure components
 
 ```{r}
 p1
@@ -153,4 +155,12 @@ p3
 p4
 p5
 p6 
+```
+
+## Session info
+
+```{r}
+
+sessionInfo()
+
 ```
