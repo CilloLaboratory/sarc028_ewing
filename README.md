@@ -1,4 +1,4 @@
-[![DOI](https://CilloLaboratory/sarc028_ewing/badge/15022777.svg)](https://github.com/CilloLaboratory/sarc028_ewing/badge/15022777)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15022777.svg)](https://doi.org/10.5281/zenodo.15022777)
 # SARC028 Ewing Sarcoma Analyses
 ## Overview
 This repository contains the code necessary to reproduce the analysis and figures from "*Spatial transcriptomic analyses of Ewing sarcoma reveals absence of human leukocyte antigen class I as a potential mechanism of primary resistance to immunotherapy*" by Daley et al (manuscript in revision).
