@@ -1,0 +1,127 @@
+---
+title: "Map cellular neighborhoods across samples"
+author: "Anthony R Cillo"
+date: "March 6, 2025"
+output: html_document
+---
+
+## Introduction
+
+Identify spatially localized cell neighborhoods based on cell type annotations and spatial localization from the CosMx data.
+
+## Load packages
+
+```{r}
+
+.libPaths("/ihome/acillo/arc85/Rlibs_Mar_2023")
+
+suppressMessages({
+    library(Seurat)
+    library(tidyverse)
+    library(patchwork)
+    library(cluster)
+    library(parallel)
+    library(msigdbr)
+    library(here)
+})
+
+```
+
+## Load datasets
+
+```{r}
+
+ser_cos <- readRDS("../../03_output/SARC028_CosMx_object.rds")
+
+ser_comb <- readRDS("../../03_output/SARC028_CosMx_and_scRNAseq_object_refined_annotations.rds")
+
+```
+
+## Filter cells and include cell annotations 
+
+```{r}
+
+## Excluded cells filtered in combined analysis
+comb_meta <- ser_comb@meta.data %>%
+    as_tibble(.,rownames="cb") %>%
+    filter(data_type=="nanostring") %>%
+    select(cb,final_cell_annot)
+
+dim(ser_cos)
+
+ser_cos <- ser_cos[,comb_meta$cb]
+
+dim(ser_cos)
+
+## Include cell annotations
+meta <- ser_cos@meta.data %>%
+    as_tibble(.,rownames="cb") %>%
+    left_join(.,comb_meta,by="cb")
+
+table(meta$final_cell_annot)
+
+ser_cos@meta.data$final_cell_annot <- meta$final_cell_annot
+
+table(ser_cos@meta.data$final_cell_annot)
+
+```
+
+## Add cell neighborhoods 
+
+```{r}
+
+hoods_clust <- readRDS("../../03_output/SARC028_spatial_clustering_results.rds")
+
+hood_clust_sub <- hoods_clust %>%
+    select(cb,cluster)
+
+meta <- left_join(meta,hood_clust_sub,by="cb")
+
+ser_cos@meta.data$spatial_clusters <- meta$cluster
+
+```
+
+## Add module scores 
+
+```{r}
+
+h_sets <- msigdbr(species = "Homo sapiens",category = "H") %>%
+  split(.$gs_name) %>%
+  lapply(.,function(x) {
+    x %>%
+      pull(gene_symbol) %>%
+      unique()
+  })
+
+ews_sets <- msigdbr(species = "Homo sapiens",category = "C2",subcategory = "CGP") %>%
+  filter(gs_name %in% c("KINSEY_TARGETS_OF_EWSR1_FLII_FUSION_UP","RIGGI_EWING_SARCOMA_PROGENITOR_UP")) %>%
+   split(.$gs_name) %>%
+  lapply(.,function(x) {
+    x %>%
+      pull(gene_symbol) %>%
+      unique()
+  })
+
+hla_signature <- list(c("HLA-A","HLA-B","HLA-C"))
+
+sets_test <- c(h_sets,ews_sets,hla_signature)
+names(sets_test)[length(sets_test)] <- "HLA_signature"
+
+ser_cos <- AddModuleScore(ser_cos,features=sets_test,ctrl=20)
+
+colnames(ser_cos@meta.data)[14:ncol(ser_cos@meta.data)] <- names(sets_test)
+
+```
+
+## Save data and session info
+
+```{r}
+
+meta_sets <- ser_cos@meta.data %>%
+    as_tibble(.,rownames="cb")
+
+# saveRDS(meta_sets,file="../../03_output/SARC028_CosMx_gene_sets_results.rds")
+
+sessionInfo()
+
+```

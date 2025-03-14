@@ -1,0 +1,207 @@
+---
+title: "Create scRNAseq Reference"
+author: "Anthony R Cillo"
+date: "March 6, 2025"
+output: html_document
+---
+
+## Introduction
+
+Here, we will create a single cell reference from our [published work](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE198896) and from single-cell RNAseq from two additional patients with Ewing sarcoma. 
+
+## Load packages
+
+```{r}
+
+.libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
+
+suppressMessages({
+library(Seurat)
+library(tidyverse)
+library(patchwork)
+library(here)
+})
+
+```
+
+## Load previously published data 
+
+```{r}
+
+ewing_pub <- readRDS("../../01_input/cillo_et_al_ccr_2022_ewing_til.rds")
+
+table(ewing_pub@meta.data$tissue,ewing_pub@meta.data$sample_type)
+
+```
+
+## Read in new Ewing data 
+
+```{r}
+
+ewing_path <- "../../01_input/ewing_scrnaseq_new/"
+sample1 <- "LAF5160A88/filtered_feature_bc_matrix"
+sample2 <- "LAF5160A89/filtered_feature_bc_matrix"
+ewing_samples <- c(paste(ewing_path,sample1,sep=""),paste(ewing_path,sample2,sep=""))
+
+ewing_dat <- vector("list",length=2)
+
+for (i in 1:2) {
+    ewing_raw <- Read10X(ewing_samples[i])
+    ewing_dat[[i]] <- CreateSeuratObject(ewing_raw)
+    print(paste("Finishing ",i," of ",length(ewing_samples),sep=""))
+}
+
+ewing_dat[[1]]@meta.data$sample <- "LAF5160A88"
+ewing_dat[[2]]@meta.data$sample <- "LAF5160A89"
+
+ewing_new <- merge(ewing_dat[[1]],ewing_dat[[2]])
+
+```
+
+## Combine datasets
+
+```{r}
+
+## Filter to shared genes
+DefaultAssay(ewing_pub) <- "RNA"
+
+set1 <- rownames(ewing_new)
+set2 <- rownames(ewing_pub)
+
+genes_use <- intersect(set1,set2)
+
+ewing_pub <- ewing_pub[genes_use,]
+
+ewing_new <- ewing_new[genes_use,]
+
+## Combine data 
+ewing_comb <- merge(ewing_pub,ewing_new)
+
+DefaultAssay(ewing_comb) <- "RNA"
+
+ewing_comb@meta.data$scrnaseq_set <- ifelse(grepl("LAF",ewing_comb@meta.data$sample),"set2","set1")
+
+table(ewing_comb@meta.data$scrnaseq_set)
+
+```
+
+## Filter based on gene features 
+
+```{r}
+
+mito_genes <- grep(pattern = "^MT-", x = rownames(x = ewing_comb), value = TRUE)
+percent_mito <- Matrix::colSums(GetAssayData(ewing_comb,slot="counts",assay="RNA")[mito_genes,])/Matrix::colSums(GetAssayData(ewing_comb,slot="counts",assay="RNA"))
+
+ewing_comb@meta.data$percent_mito <- percent_mito
+
+VlnPlot(ewing_comb,features="percent_mito")
+
+ewing_comb <- ewing_comb[,ewing_comb@meta.data$percent_mito<0.25]
+
+VlnPlot(ewing_comb,features="nFeature_RNA") +
+    geom_hline(yintercept=200)
+
+ewing_comb <- ewing_comb[,ewing_comb@meta.data$nFeature_RNA>200]
+
+VlnPlot(ewing_comb,features="HBA2",slot="counts") +
+    geom_hline(yintercept=5)
+
+ewing_comb <- ewing_comb[,GetAssayData(ewing_comb,assa="RNA",slot="counts")["HBA2",]<5]
+
+```
+
+## Data integration
+
+We need to perform data integration to account for differences in the tumor populations from the two Ewing patients.
+
+```{r}
+
+ewing_list <- SplitObject(ewing_comb, split.by = "sample")
+ewing_list <- lapply(X = ewing_list, FUN = SCTransform)
+features <- SelectIntegrationFeatures(object.list = ewing_list, nfeatures = 2000)
+ewing_list <- PrepSCTIntegration(object.list = ewing_list, anchor.features = features)
+
+features <- SelectIntegrationFeatures(object.list = ewing_list, nfeatures = 2000)
+
+ewing_anchors <- FindIntegrationAnchors(object.list = ewing_list,
+                                        normalization.method = "SCT",
+                                        anchor.features = features
+                                        )
+
+ewing_comb_sct <- IntegrateData(anchorset = ewing_anchors, normalization.method = "SCT")
+
+ewing_comb_sct <- RunPCA(ewing_comb_sct, verbose = FALSE)
+
+ElbowPlot(ewing_comb_sct,ndims=50)
+
+ewing_comb_sct <- RunUMAP(ewing_comb_sct, reduction = "pca", dims = 1:30)
+ewing_comb_sct <- FindNeighbors(ewing_comb_sct, reduction = "pca", dims = 1:30)
+ewing_comb_sct <- FindClusters(ewing_comb_sct, resolution = c(0.3,0.5,0.7,1))
+
+p1 <- DimPlot(ewing_comb_sct, reduction = "umap", group.by = "sample")
+p2 <- DimPlot(ewing_comb_sct, reduction = "umap", group.by="integrated_snn_res.0.5",label = TRUE, repel = TRUE)
+p1 + p2
+
+DefaultAssay(ewing_comb_sct) <- "RNA"
+
+ewing_comb_sct <- NormalizeData(ewing_comb_sct)
+
+table(ewing_comb_sct@meta.data$cell_types,ewing_comb_sct@meta.data$integrated_snn_res.0.5) %>%
+    pheatmap::pheatmap(.,scale="row")
+
+p3 <- DimPlot(ewing_comb_sct, reduction = "umap", group.by = "cell_types")
+p4 <- DimPlot(ewing_comb_sct, reduction = "umap", group.by="integrated_snn_res.0.5",label = TRUE, repel = TRUE)
+p5 <- FeaturePlot(ewing_comb_sct,c("CD3D","CD8A","CD14","PTPRC"))
+
+p3 + p4 + p5
+
+FeaturePlot(ewing_comb_sct,c("EPCAM","PTPRC","CD99","FLI1","CAV1","MMP9","COL1A1"))
+
+metadata <- ewing_comb_sct@meta.data
+
+Idents(ewing_comb_sct) <- "integrated_snn_res.0.5"
+
+metadata <- metadata %>%
+    mutate(crude_cell_types=recode(integrated_snn_res.0.5,
+                                        `0`="Tumor cells 1",
+                                        `1`="T cells",
+                                        `2`="CD14+CD16+ Macrophage",
+                                        `3`="Tumor cells 2",
+                                        `4`="CD14+CD16- Monocytes",
+                                        `5`="Tumor cells 3",
+                                        `6`="T cells",
+                                        `7`="B cells",
+                                        `8`="Tumor cells 4",
+                                        `9`="Tumor cells 5",
+                                        `10`="CD1C+ DCs",
+                                        `11`="Fibroblasts",
+                                        `12`="CD14+CD16+ Monocytes",
+                                        `13`="Tumor cells 6",
+                                        `14`="NK cells",
+                                        `15`="Tumor cells 7",
+                                        `16`="CD14+CD16+ Macrophage",
+                                        `17`="Osteoclasts",
+                                        `18`="pDCs",
+                                        `19`="Tumor cells 8",
+                                        `20`="CD1C+ DCs",
+                                        `21`="Plasmablasts"
+                                   )
+           )
+
+metadata$scrnaseq_crude_cell_types <- as.character(metadata$crude_cell_types)
+
+ewing_comb_sct@meta.data$scrnaseq_crude_cell_types <- metadata$scrnaseq_crude_cell_types
+
+DimPlot(ewing_comb_sct,group.by="scrnaseq_crude_cell_types",label=T,repel=T)
+
+```
+
+## Save results and session info
+
+```{r}
+
+# saveRDS(ewing_comb_sct,file="../../03_output/Ewing_scRNAseq_reference.rds")
+
+sessionInfo()
+
+```

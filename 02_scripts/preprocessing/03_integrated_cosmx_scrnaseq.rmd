@@ -1,0 +1,180 @@
+---
+title: "Integrate CosMX and scRNAseq"
+author: "Anthony R Cillo"
+date: "March 6, 2025"
+output: md_document
+---
+
+## Introduction
+
+Here, we will use the previously defined cell types from scRNAseq analysis to annotate the CosMx cell types.
+
+## Load packages
+
+```{r}
+
+.libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
+
+suppressMessages({
+    library(Seurat)
+    library(tidyverse)
+    library(patchwork)
+})
+    
+```
+
+## Load datasets
+
+```{r}
+
+ser_scrnaseq <- readRDS("../../03_output/Ewing_scRNAseq_reference.rds")
+ser_cos <- readRDS("../../03_output/SARC028_CosMx_object.rds")
+
+```
+
+## Combine scRNAseq and CosMx
+
+```{r}
+
+## Select features present in both scRNAseq and Nanostring
+DefaultAssay(ser_scrnaseq) <- "RNA"
+
+sc_raw <- GetAssayData(ser_scrnaseq)
+
+DefaultAssay(ser_cos) <- "Nanostring"
+
+nano_raw <- GetAssayData(ser_cos)
+
+features_use <- intersect(rownames(sc_raw),rownames(nano_raw))
+
+sc_raw_fil <- sc_raw[features_use,]
+
+nano_raw_fil <- nano_raw[features_use,]
+
+## Create new Seurat objects with only shared features
+sc_ser <- CreateSeuratObject(sc_raw_fil)
+
+nano_ser <- CreateSeuratObject(nano_raw_fil)
+
+sc_ser@meta.data <- ser_scrnaseq@meta.data
+
+sc_ser@meta.data$data_type <- "scrnaseq"
+
+nano_ser@meta.data <- ser_cos@meta.data
+
+nano_ser@meta.data$data_type <- "nanostring"
+
+```
+
+## Integrate scRNAseq and CosMx data 
+
+```{r}
+
+ser_list <- list(sc_ser,nano_ser)
+
+# normalize and identify variable features for each dataset independently
+ser_list <- lapply(X = ser_list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 500)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = ser_list)
+
+anchors <- FindIntegrationAnchors(object.list = ser_list, anchor.features = features)
+
+# this command creates an 'integrated' data assay
+ser_comb <- IntegrateData(anchorset = anchors)
+
+# We will perform downstream analysis on the corrected data
+# Original unmodified data still resides in the 'RNA' assay
+DefaultAssay(ser_comb) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+ser_comb <- ScaleData(ser_comb, verbose = FALSE)
+ser_comb <- RunPCA(ser_comb, npcs = 30, verbose = FALSE)
+
+ElbowPlot(ser_comb,ndims=50)
+
+ser_comb <- RunUMAP(ser_comb, reduction = "pca", dims = 1:20)
+ser_comb <- FindNeighbors(ser_comb, reduction = "pca", dims = 1:20)
+ser_comb <- FindClusters(ser_comb, resolution = c(0.3,0.5,0.7,1))
+
+```
+
+## Check results 
+
+```{r}
+
+DimPlot(ser_comb,group.by="data_type")
+
+p1 <- DimPlot(ser_comb,group.by="scrnaseq_crude_cell_types",label=T,repel=T)
+p2 <- DimPlot(ser_comb,group.by="integrated_snn_res.0.5",label=T)
+
+p1 
+p2 
+
+Idents(ser_comb) <- "integrated_snn_res.0.5"
+
+ser_comb@meta.data %>%
+    select(integrated_snn_res.0.5,nFeature_Nanostring) %>%
+    filter(!is.na(nFeature_Nanostring)) %>%
+    group_by(integrated_snn_res.0.5) %>%
+    summarize(mean_features=mean(nFeature_Nanostring))
+
+## Remove cluster 16 - essentially no features per cell
+ser_comb <- ser_comb[,!ser_comb@meta.data$integrated_snn_res.0.5=="16"]
+
+ser_comb@meta.data$integrated_snn_res.0.5 <- droplevels(ser_comb@meta.data$integrated_snn_res.0.5)
+
+table(ser_comb@meta.data$integrated_snn_res.0.5)
+
+```
+
+## Transfer cell type annotations
+
+```{r}
+
+ser_comb@meta.data %>%
+    select(integrated_snn_res.0.5,scrnaseq_crude_cell_types) %>%
+    table() %>%
+    pheatmap::pheatmap(.,scale="column")
+
+meta <- ser_comb@meta.data %>%
+    mutate(initial_cell_annot=recode(integrated_snn_res.0.5,
+                                   `0` = "Tumor_cells_c0",
+                                   `1` = "Tumor_cells_c1",
+                                   `2` = "Tumor_cells_c2",
+                                   `3` = "Tumor_cells_c3",
+                                   `4` = "Osteoclasts",
+                                   `5` = "Tumor_cells_c4",
+                                   `6` = "T_and_NK_cells",
+                                   `7` = "Tumor_cells_c5",
+                                   `8` = "Tumor_cells_c6",
+                                   `9` = "CD14posCD16pos_macro",
+                                   `10` = "Tumor_cells_c7",
+                                   `11` = "Monocytes",
+                                   `12` = "CD1C_DCs",
+                                   `13` = "Plasmablasts/pDCs",
+                                   `14` = "Fibroblasts",
+                                   `15` = "B_cells",
+                                   `17` = "C1QCpos_macrophage")
+           )
+
+table(meta$initial_cell_annot,useNA="always")
+
+ser_comb@meta.data$initial_cell_annot <- meta$initial_cell_annot
+
+DimPlot(ser_comb,group.by="initial_cell_annot")
+
+```
+
+## Save results and session info
+
+```{r}
+
+# saveRDS(ser_comb,file="../../03_output/SARC028_CosMx_and_scRNAseq_object.rds")
+
+sessionInfo()
+
+```

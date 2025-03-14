@@ -1,0 +1,73 @@
+---
+title: "SARC028 CosMX - Create Seruat Object"
+author: "Anthony R Cillo"
+date: "March 6, 2025"
+output: html_document
+---
+
+## Introduction
+
+Here, we will utilize Seurat to create an object containing the SARC028 CosMx data.
+
+## Load packages
+
+```{r}
+
+.libPaths("/ix1/acillo/arc85/packages/Rlibs_sarc028")
+
+suppressMessages({
+    library(Seurat)
+    library(tidyverse)
+    library(patchwork)
+    library(here)
+})
+
+```
+
+## Read in CosMx Data
+
+```{r}
+
+ser_cos <- LoadNanostring(data.dir = "../../01_input/SARC028_CosMx",fov="1")
+
+```
+
+## Load compiled metadata and clinical data 
+
+```{r}
+
+metadata_to_add <- readRDS("../../01_input/SARC028_CosMx_deident_metadata.rds")
+
+```
+
+## Add metadata to Seurat obj
+
+```{r}
+
+identical(metadata_to_add$cb,colnames(ser_cos))
+
+ser_cos@meta.data$fov_selected <- metadata_to_add$fov_selected
+ser_cos@meta.data$deident_id <- metadata_to_add$deident_id
+ser_cos@meta.data$timepoint <- metadata_to_add$timepoint
+ser_cos@meta.data$tumor_perc_change <- metadata_to_add$tumor_perc_change
+ser_cos@meta.data$log_tumor_perc_change <- metadata_to_add$log_tumor_perc_change
+ser_cos@meta.data$best_resp <- metadata_to_add$best_resp
+
+```
+
+## Normalize Data with SCT 
+
+```{r}
+
+ser_cos <- SCTransform(ser_cos, assay = "Nanostring", clip.range = c(-10, 10))
+
+```
+
+## Save and session info
+
+```{r}
+
+# saveRDS(ser_cos,file="../../03_output/SARC028_CosMx_object.rds")
+sessionInfo()
+
+```
